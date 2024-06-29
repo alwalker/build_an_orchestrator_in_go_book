@@ -9,3 +9,9 @@
     - Look at MetalLB later
 <li> what would it take to add "service discovery"</li>
 </ol>
+
+## VM/Automation Tech
+
+- [bootable containers](https://fedoramagazine.org/get-involved-with-fedora-bootable-containers/)
+- Fedora CoreOS/LEAP Micro
+- Lima + libvirt
