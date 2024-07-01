@@ -1,0 +1,15 @@
+{
+  "image": "vscode_orchestrator",
+  "remoteUser": "root",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,z,type=bind",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "streetsidesoftware.code-spell-checker",
+        "shardulm94.trailing-spaces",
+        "golang.go"
+      ]
+    }
+  }
+}

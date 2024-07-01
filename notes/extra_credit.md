@@ -2,6 +2,7 @@
 
 <ol>
 <li> SBOM </li>
+<li> dns instead of ip's for nodes? </li>
 <li> podman instead of docker</li>
 <li> HA -> is this just implementing etcd?</li>
     - Maybe also keepalived
