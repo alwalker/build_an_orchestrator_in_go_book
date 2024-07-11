@@ -2,8 +2,8 @@
 
 <ol>
 <li> SBOM </li>
+<li> podman instead of docker and clean up leaky abstraction</li>
 <li> dns instead of ip's for nodes? </li>
-<li> podman instead of docker</li>
 <li> HA -> is this just implementing etcd?</li>
     - Maybe also keepalived
 <li> Mutliple DNS entries at router and RR to start</li>
