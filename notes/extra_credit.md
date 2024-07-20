@@ -3,6 +3,7 @@
 <ol>
 <li> SBOM </li>
 <li> podman instead of docker and clean up leaky abstraction</li>
+<li> automated tests</li>
 <li> dns instead of ip's for nodes? </li>
 <li> HA -> is this just implementing etcd?</li>
     - Maybe also keepalived

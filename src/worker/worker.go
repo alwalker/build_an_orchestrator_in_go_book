@@ -18,6 +18,16 @@ type Worker struct {
 	TaskCount int
 }
 
+func (w *Worker) GetTasks() []*task.Task {
+	v := make([]*task.Task, 0, len(w.Db))
+
+	for _, value := range w.Db {
+		v = append(v, value)
+	}
+
+	return v
+}
+
 func (w *Worker) AddTask(t task.Task) {
 	w.Queue.Enqueue(t)
 }
