@@ -3,6 +3,7 @@
 <ol>
 <li> SBOM </li>
 <li> automated tests</li>
+<li> Handle sigterm on workers and clean up </li>
 <li> podman instead of docker</li>
 <li> get rid of leaky task/task queue abstraction </li>
 <li> dns instead of ip's for nodes? </li>
