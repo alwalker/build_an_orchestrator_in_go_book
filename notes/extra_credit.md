@@ -2,6 +2,7 @@
 
 <ol>
 <li> SBOM </li>
+<li> Linting/handle warnings </li>
 <li> automated tests</li>
 <li> Handle sigterm on workers and clean up </li>
 <li> podman instead of docker</li>

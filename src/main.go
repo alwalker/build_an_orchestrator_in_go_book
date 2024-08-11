@@ -5,18 +5,18 @@ import (
 	"cube/task"
 	"cube/worker"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 )
 
 func main() {
-	host := os.Getenv("CUBE_HOST")
-	port, _ := strconv.Atoi(os.Getenv("CUBE_PORT"))
+	whost := os.Getenv("CUBE_WORKER_HOST")
+	wport, _ := strconv.Atoi(os.Getenv("CUBE_WORKER_PORT"))
+	mhost := os.Getenv("CUBE_MANAGER_HOST")
+	mport, _ := strconv.Atoi(os.Getenv("CUBE_MANAGER_PORT"))
 
 	fmt.Println("Starting Cube worker")
 
@@ -24,60 +24,51 @@ func main() {
 		Queue: *queue.New(),
 		Db:    make(map[uuid.UUID]*task.Task),
 	}
-	api := worker.Api{Address: host, Port: port, Worker: &w}
+	wapi := worker.Api{Address: whost, Port: wport, Worker: &w}
 
-	go runTasks(&w)
+	go w.RunTasks()
 	go w.CollectStats()
-	go api.Start()
+	go wapi.Start()
 
-	workers := []string{fmt.Sprintf("%s:%d", host, port)}
+	fmt.Println("Starting Cube manager")
+
+	workers := []string{fmt.Sprintf("%s:%d", whost, wport)}
 	m := manager.New(workers)
+	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
 
-	for i := 0; i < 3; i++ {
-		t := task.Task{
-			ID:    uuid.New(),
-			Name:  fmt.Sprintf("test-container-%d", i),
-			State: task.Scheduled,
-			Image: "strm/helloworld-http",
-		}
-		te := task.TaskEvent{
-			ID:    uuid.New(),
-			State: task.Running,
-			Task:  t,
-		}
-		m.AddTask(te)
-		m.SendWork()
-	}
+	go m.ProcessTasks()
+	go m.UpdateTasks()
+	mapi.Start()
 
-	go func() {
-		for {
-			fmt.Printf("[Manager] Updating tasks from %d workers\n",
-				len(m.Workers))
-			m.UpdateTasks()
-			time.Sleep(15 * time.Second)
-		}
-	}()
+	// for i := 0; i < 3; i++ {
+	// 	t := task.Task{
+	// 		ID:    uuid.New(),
+	// 		Name:  fmt.Sprintf("test-container-%d", i),
+	// 		State: task.Scheduled,
+	// 		Image: "strm/helloworld-http",
+	// 	}
+	// 	te := task.TaskEvent{
+	// 		ID:    uuid.New(),
+	// 		State: task.Running,
+	// 		Task:  t,
+	// 	}
+	// 	m.AddTask(te)
+	// 	m.SendWork()
+	// }
 
-	for {
-		for _, t := range m.TaskDb {
-			fmt.Printf("[Manager] Task: id: %s, state: %d\n", t.ID, t.State)
-			time.Sleep(15 * time.Second)
-		}
-	}
-}
+	// go func() {
+	// 	for {
+	// 		fmt.Printf("[Manager] Updating tasks from %d workers\n",
+	// 			len(m.Workers))
+	// 		m.UpdateTasks()
+	// 		time.Sleep(15 * time.Second)
+	// 	}
+	// }()
 
-func runTasks(w *worker.Worker) {
-	for {
-		if w.Queue.Len() != 0 {
-			result := w.RunTask()
-			if result.Error != nil {
-				log.Printf("Error running task: %v\n", result.Error)
-			}
-		} else {
-			log.Printf("No tasks to process currently.\n")
-		}
-
-		log.Println("Sleeping for 10 seconds.")
-		time.Sleep(10 * time.Second)
-	}
+	// for {
+	// 	for _, t := range m.TaskDb {
+	// 		fmt.Printf("[Manager] Task: id: %s, state: %d\n", t.ID, t.State)
+	// 		time.Sleep(15 * time.Second)
+	// 	}
+	// }
 }
