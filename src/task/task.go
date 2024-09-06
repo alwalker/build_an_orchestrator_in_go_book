@@ -27,10 +27,13 @@ type Task struct {
 	Memory        int64
 	Disk          int64
 	ExposedPorts  nat.PortSet
+	HostPorts     nat.PortMap
 	PortBindings  map[string]string
 	RestartPolicy string
 	StartTime     time.Time
 	FinishTime    time.Time
+	HealthCheck   string
+	RestartCount  int
 }
 
 type TaskEvent struct {
@@ -85,6 +88,24 @@ type Docker struct {
 	Config Config
 }
 
+type DockerInspectResponse struct {
+	Error     error
+	Container *types.ContainerJSON
+}
+
+func (d *Docker) Inspect(containerID string) DockerInspectResponse {
+	dc, _ := client.NewClientWithOpts(client.FromEnv)
+	ctx := context.Background()
+
+	resp, err := dc.ContainerInspect(ctx, containerID)
+	if err != nil {
+		log.Printf("Error inspecting container: %s\n", err)
+		return DockerInspectResponse{Error: err}
+	}
+
+	return DockerInspectResponse{Container: &resp}
+}
+
 func NewDocker(c *Config) *Docker {
 	dc, _ := client.NewClientWithOpts(client.FromEnv)
 	return &Docker{
@@ -114,7 +135,7 @@ func (d *Docker) Run() DockerResult {
 	}
 
 	r := container.Resources{
-		Memory: d.Config.Memory,
+		Memory:   d.Config.Memory,
 		NanoCPUs: int64(d.Config.Cpu * math.Pow(10, 9)),
 	}
 
