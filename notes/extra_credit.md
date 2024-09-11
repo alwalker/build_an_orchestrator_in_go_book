@@ -4,12 +4,15 @@
 <li> SBOM </li>
 <li> Linting/handle warnings </li>
 <li> automated tests</li>
+<li> cleanup deprecated function calls </li>
+<li> unfuck multiple stats implementations </li>
 <li> adjustable retry task count </li>
 <li> Handle sigterm on workers and clean up </li>
 <li> podman instead of docker</li>
     <ul>
         <li>Exposed Port mapping doesn't exist with docker sdk</li>
     </ul>
+<li> better scheduler </li>
 <li> get rid of leaky task/task queue abstraction </li>
 <li> dns instead of ip's for nodes? </li>
 <li> HA -> is this just implementing etcd?</li>

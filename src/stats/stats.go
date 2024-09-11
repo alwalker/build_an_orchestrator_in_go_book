@@ -1,4 +1,4 @@
-package worker
+package stats
 
 import (
 	"log"
@@ -14,19 +14,20 @@ type Stats struct {
 	TaskCount int
 }
 
-func (s *Stats) MemTotalKb() uint64 {
-	return s.MemStats.MemTotal
+func (s *Stats) MemUsedKb() uint64 {
+	return s.MemStats.MemTotal - s.MemStats.MemAvailable
+}
+
+func (s *Stats) MemUsedPercent() uint64 {
+	return s.MemStats.MemAvailable / s.MemStats.MemTotal
 }
 
 func (s *Stats) MemAvailableKb() uint64 {
 	return s.MemStats.MemAvailable
 }
 
-func (s *Stats) MemUsedKb() uint64 {
-	return s.MemStats.MemTotal - s.MemStats.MemAvailable
-}
-func (s *Stats) MemUsedPercent() uint64 {
-	return s.MemStats.MemAvailable / s.MemStats.MemTotal
+func (s *Stats) MemTotalKb() uint64 {
+	return s.MemStats.MemTotal
 }
 
 func (s *Stats) DiskTotal() uint64 {
@@ -42,12 +43,12 @@ func (s *Stats) DiskUsed() uint64 {
 }
 
 func (s *Stats) CpuUsage() float64 {
-	idle := s.CpuStats.Idle + s.CpuStats.IOWait
-	nonIdle := s.CpuStats.User + s.CpuStats.Nice + s.CpuStats.System +
-		s.CpuStats.IRQ + s.CpuStats.SoftIRQ + s.CpuStats.Steal
 
+	idle := s.CpuStats.Idle + s.CpuStats.IOWait
+	nonIdle := s.CpuStats.User + s.CpuStats.Nice + s.CpuStats.System + s.CpuStats.IRQ + s.CpuStats.SoftIRQ + s.CpuStats.Steal
 	total := idle + nonIdle
-	if total == 0 {
+
+	if total == 0 && idle == 0 {
 		return 0.00
 	}
 
@@ -63,12 +64,14 @@ func GetStats() *Stats {
 	}
 }
 
+// GetMemoryInfo See https://godoc.org/github.com/c9s/goprocinfo/linux#MemInfo
 func GetMemoryInfo() *linux.MemInfo {
 	memstats, err := linux.ReadMemInfo("/proc/meminfo")
 	if err != nil {
 		log.Printf("Error reading from /proc/meminfo")
 		return &linux.MemInfo{}
 	}
+
 	return memstats
 }
 
@@ -79,6 +82,7 @@ func GetDiskInfo() *linux.Disk {
 		log.Printf("Error reading from /")
 		return &linux.Disk{}
 	}
+
 	return diskstats
 }
 
@@ -89,6 +93,7 @@ func GetCpuStats() *linux.CPUStat {
 		log.Printf("Error reading from /proc/stat")
 		return &linux.CPUStat{}
 	}
+
 	return &stats.CPUStatAll
 }
 
@@ -99,5 +104,6 @@ func GetLoadAvg() *linux.LoadAvg {
 		log.Printf("Error reading from /proc/loadavg")
 		return &linux.LoadAvg{}
 	}
+
 	return loadavg
 }
