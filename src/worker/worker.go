@@ -1,33 +1,50 @@
 package worker
 
 import (
-	"cube/task"
 	"cube/stats"
+	"cube/store"
+	"cube/task"
 	"errors"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/golang-collections/collections/queue"
-	"github.com/google/uuid"
 )
 
 type Worker struct {
 	Name      string
 	Queue     queue.Queue
-	Db        map[uuid.UUID]*task.Task
+	Db        store.Store
 	TaskCount int
 	Stats     *stats.Stats
 }
 
-func (w *Worker) GetTasks() []*task.Task {
-	v := make([]*task.Task, 0, len(w.Db))
+func New(name string, taskDbType string) *Worker {
+	w := Worker{
+		Name:  name,
+		Queue: *queue.New(),
+	}
+	var s store.Store
+	switch taskDbType {
+	case "memory":
+		s = store.NewInMemoryTaskStore()
+	case "persistent":
+		filename := fmt.Sprintf("%s_tasks.db", name)
+		s, _ = store.NewTaskStore(filename, 0600, "tasks")
+	}
+	w.Db = s
+	return &w
+}
 
-	for _, value := range w.Db {
-		v = append(v, value)
+func (w *Worker) GetTasks() []*task.Task {
+	taskList, err := w.Db.List()
+	if err != nil {
+		log.Printf("error getting list of tasks: %v\n", err)
+		return nil
 	}
 
-	return v
+	return taskList.([]*task.Task)
 }
 
 func (w *Worker) AddTask(t task.Task) {
@@ -51,11 +68,19 @@ func (w *Worker) runTask() task.DockerResult {
 	}
 
 	taskQueued := t.(task.Task)
-	taskPersisted := w.Db[taskQueued.ID]
-	if taskPersisted == nil {
-		taskPersisted = &taskQueued
-		w.Db[taskQueued.ID] = &taskQueued
+	err := w.Db.Put(taskQueued.ID.String(), &taskQueued)
+	if err != nil {
+		msg := fmt.Errorf("error storing task %s: %v", taskQueued.ID.String(), err)
+		log.Println(msg)
+		return task.DockerResult{Error: msg}
 	}
+	queuedTask, err := w.Db.Get(taskQueued.ID.String())
+	if err != nil {
+		msg := fmt.Errorf("error getting task %s from database: %v", taskQueued.ID.String(), err)
+		log.Println(msg)
+		return task.DockerResult{Error: msg}
+	}
+	taskPersisted := *queuedTask.(*task.Task)
 
 	var result task.DockerResult
 
@@ -95,7 +120,13 @@ func (w *Worker) UpdateTasks() {
 }
 
 func (w *Worker) updateTasks() {
-	for id, t := range w.Db {
+	tasks, err := w.Db.List()
+	if err != nil {
+		log.Printf("error getting list of tasks: %v\n", err)
+		return
+	}
+
+	for id, t := range tasks.([]*task.Task) {
 		if t.State == task.Running {
 			resp := w.InspectTask(*t)
 			if resp.Error != nil {
@@ -103,13 +134,16 @@ func (w *Worker) updateTasks() {
 			}
 			if resp.Container == nil {
 				log.Printf("No container for running task %s\n", id)
-				w.Db[id].State = task.Failed
+				t.State = task.Failed
+				w.Db.Put(t.ID.String(), t)
 			}
 			if resp.Container.State.Status == "exited" {
 				log.Printf("Container for task %s in non-running state %s", id, resp.Container.State.Status)
-				w.Db[id].State = task.Failed
+				t.State = task.Failed
+				w.Db.Put(t.ID.String(), t)
 			}
-			w.Db[id].HostPorts = resp.Container.NetworkSettings.NetworkSettingsBase.Ports
+			t.HostPorts = resp.Container.NetworkSettings.NetworkSettingsBase.Ports
+			w.Db.Put(t.ID.String(), t)
 		}
 	}
 }
@@ -141,13 +175,13 @@ func (w *Worker) StartTask(t task.Task) task.DockerResult {
 	if result.Error != nil {
 		log.Printf("Err running task %v: %v\n", t.ID, result.Error)
 		t.State = task.Failed
-		w.Db[t.ID] = &t
+		w.Db.Put(t.ID.String(), &t)
 		return result
 	}
 
 	t.ContainerID = result.ContainerId
 	t.State = task.Running
-	w.Db[t.ID] = &t
+	w.Db.Put(t.ID.String(), &t)
 
 	return result
 }
@@ -165,7 +199,7 @@ func (w *Worker) StopTask(t task.Task) task.DockerResult {
 
 	t.FinishTime = time.Now().UTC()
 	t.State = task.Completed
-	w.Db[t.ID] = &t
+	w.Db.Put(t.ID.String(), &t)
 
 	log.Printf("Stopped and removed container %v for task %v\n",
 		t.ContainerID, t.ID)

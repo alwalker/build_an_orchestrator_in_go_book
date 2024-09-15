@@ -4,8 +4,11 @@
 <li> SBOM </li>
 <li> Linting/handle warnings </li>
 <li> automated tests</li>
+<li> Delete/stopping a task was broken at some point </li>
+<li> unify and cleanup fmt.printf and log logging </li>
 <li> cleanup deprecated function calls </li>
 <li> unfuck multiple stats implementations </li>
+<li> cleanup unchecked type conversions </li>
 <li> adjustable retry task count </li>
 <li> Handle sigterm on workers and clean up </li>
 <li> podman instead of docker</li>
