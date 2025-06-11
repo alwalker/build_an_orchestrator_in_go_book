@@ -1,4 +1,4 @@
-ARG FEDORA_VERSION=40
+ARG FEDORA_VERSION=42
 ARG FEDORA_ARCH=x86_64
 FROM registry.fedoraproject.org/fedora:$FEDORA_VERSION-$FEDORA_ARCH
 
@@ -25,10 +25,13 @@ RUN dnf install -y --refresh \
     bind-utils \
     redis \
     postgresql \
-    iproute
+    iproute \
+    gawk
 
-RUN dnf install -y golang \
-    && echo 'export GOPATH=$HOME/go' >> $HOME/.bashrc \
-    && echo 'export PATH=$PATH:$GOPATH/bin' >> $HOME/.bashrc
+ARG GOLANG_VERSION=1.24.4
+RUN wget "https://go.dev/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz" -O go.tar.gz \
+    && tar -C /usr/local -xzf go.tar.gz \
+    && echo 'export PATH=$PATH:/usr/local/go/bin' >> $HOME/.bashrc \
+    && echo 'export GOPATH=$HOME/go' >> $HOME/.bashrc
 
 RUN dnf clean all
