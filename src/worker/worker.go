@@ -60,11 +60,11 @@ func (w *Worker) CollectStats() {
 	}
 }
 
-func (w *Worker) runTask() task.DockerResult {
+func (w *Worker) runTask() task.ContainerResult {
 	t := w.Queue.Dequeue()
 	if t == nil {
 		log.Println("No tasks in the queue")
-		return task.DockerResult{Error: nil}
+		return task.ContainerResult{Error: nil}
 	}
 
 	taskQueued := t.(task.Task)
@@ -72,17 +72,17 @@ func (w *Worker) runTask() task.DockerResult {
 	if err != nil {
 		msg := fmt.Errorf("error storing task %s: %v", taskQueued.ID.String(), err)
 		log.Println(msg)
-		return task.DockerResult{Error: msg}
+		return task.ContainerResult{Error: msg}
 	}
 	queuedTask, err := w.Db.Get(taskQueued.ID.String())
 	if err != nil {
 		msg := fmt.Errorf("error getting task %s from database: %v", taskQueued.ID.String(), err)
 		log.Println(msg)
-		return task.DockerResult{Error: msg}
+		return task.ContainerResult{Error: msg}
 	}
 	taskPersisted := *queuedTask.(*task.Task)
 
-	var result task.DockerResult
+	var result task.ContainerResult
 
 	if task.ValidStateTransition(taskPersisted.State, taskQueued.State) {
 		switch taskQueued.State {
@@ -91,21 +91,26 @@ func (w *Worker) runTask() task.DockerResult {
 		case task.Completed:
 			result = w.StopTask(taskQueued)
 		default:
-			result.Error = errors.New("We should not get here")
+			result.Error = errors.New("we should not get here")
 		}
 	} else {
-		err := fmt.Errorf("Invalid transition from %v to %v", taskPersisted.State, taskQueued.State)
+		err := fmt.Errorf("invalid transition from %v to %v", taskPersisted.State, taskQueued.State)
 		result.Error = err
 	}
 
 	return result
 }
 
-func (w *Worker) InspectTask(t task.Task) task.DockerInspectResponse {
+func (w *Worker) InspectTask(t task.Task) task.PodmanInspectResponse {
 	config := task.NewConfig(&t)
-	d := task.NewDocker(config)
 
-	return d.Inspect(t.ContainerID)
+	p, err := task.NewPodman(config)
+	if err != nil {
+		log.Printf("error getting creating Podman connection: %v\n", err)
+		return task.PodmanInspectResponse{Error: err}
+	}
+
+	return p.Inspect(t.ContainerID)
 }
 
 func (w *Worker) UpdateTasks() {
@@ -133,16 +138,16 @@ func (w *Worker) updateTasks() {
 				fmt.Printf("ERROR: %v\n", resp.Error)
 			}
 			if resp.Container == nil {
-				log.Printf("No container for running task %s\n", id)
+				log.Printf("No container for running task %d\n", id)
 				t.State = task.Failed
 				w.Db.Put(t.ID.String(), t)
 			}
 			if resp.Container.State.Status == "exited" {
-				log.Printf("Container for task %s in non-running state %s", id, resp.Container.State.Status)
+				log.Printf("Container for task %d in non-running state %s", id, resp.Container.State.Status)
 				t.State = task.Failed
 				w.Db.Put(t.ID.String(), t)
 			}
-			t.HostPorts = resp.Container.NetworkSettings.NetworkSettingsBase.Ports
+			t.HostPorts = resp.Container.NetworkSettings.Ports
 			w.Db.Put(t.ID.String(), t)
 		}
 	}
@@ -164,14 +169,18 @@ func (w *Worker) RunTasks() {
 	}
 }
 
-func (w *Worker) StartTask(t task.Task) task.DockerResult {
+func (w *Worker) StartTask(t task.Task) task.ContainerResult {
 	t.StartTime = time.Now().UTC()
 
 	config := task.NewConfig(&t)
 
-	d := task.NewDocker(config)
+	p, err := task.NewPodman(config)
+	if err != nil {
+		log.Printf("Error creating podman connection: %v", err)
+		return task.ContainerResult{Error: err}
+	}
 
-	result := d.Run()
+	result := p.Run()
 	if result.Error != nil {
 		log.Printf("Err running task %v: %v\n", t.ID, result.Error)
 		t.State = task.Failed
@@ -186,12 +195,15 @@ func (w *Worker) StartTask(t task.Task) task.DockerResult {
 	return result
 }
 
-func (w *Worker) StopTask(t task.Task) task.DockerResult {
+func (w *Worker) StopTask(t task.Task) task.ContainerResult {
 	config := task.NewConfig(&t)
 
-	d := task.NewDocker(config)
-
-	result := d.Stop(t.ContainerID)
+	p, err := task.NewPodman(config)
+	if err != nil {
+		log.Printf("Error creating podman connection: %v", err)
+		return task.ContainerResult{Error: err}
+	}
+	result := p.Stop(t.ContainerID)
 	if result.Error != nil {
 		log.Printf("Error stopping container %v: %v\n", t.ContainerID,
 			result.Error)

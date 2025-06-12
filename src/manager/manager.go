@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/go-connections/nat"
+	nettypes "github.com/containers/common/libnetwork/types"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 )
@@ -374,10 +374,11 @@ func (m *Manager) restartTask(t *task.Task) {
 	log.Printf("%#v\n", t)
 }
 
-func getHostPort(ports nat.PortSet) *string {
-	for k := range ports {
-		p := k.Port()
-		return &p
+func getHostPort(ports []nettypes.PortMapping) *string {
+	for _, k := range ports {
+		p := k.HostPort
+		sp := fmt.Sprintf("%d", p)
+		return &sp
 	}
 
 	log.Print("No ports found in portmap")

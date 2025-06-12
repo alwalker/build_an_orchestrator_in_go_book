@@ -14,7 +14,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/docker/go-units"
 	"github.com/spf13/cobra"
 )
 
@@ -49,9 +48,9 @@ The status command allows a user to get the status of tasks from the Cube manage
 		for _, task := range tasks {
 			var start string
 			if task.StartTime.IsZero() {
-				start = fmt.Sprintf("%s ago", units.HumanDuration(time.Now().UTC().Sub(time.Now().UTC())))
+				start = "0 seconds ago"
 			} else {
-				start = fmt.Sprintf("%s ago", units.HumanDuration(time.Now().UTC().Sub(task.StartTime)))
+				start = fmt.Sprintf("%.2f ago", time.Since(task.StartTime).Seconds())
 			}
 			state := task.State.String()
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t\n", task.ID, task.Name, start, state, task.Name, task.Image)

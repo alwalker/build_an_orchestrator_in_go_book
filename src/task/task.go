@@ -1,20 +1,20 @@
 package task
 
 import (
-	"io"
 	"log"
-	"math"
-	"os"
+	"strings"
 	"time"
 
 	"context"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
+	nettypes "github.com/containers/common/libnetwork/types"
+	"github.com/containers/podman/v5/libpod/define"
+	"github.com/containers/podman/v5/pkg/bindings"
+	"github.com/containers/podman/v5/pkg/bindings/containers"
+	"github.com/containers/podman/v5/pkg/bindings/images"
+	"github.com/containers/podman/v5/pkg/specgen"
 	"github.com/google/uuid"
-	"github.com/moby/moby/pkg/stdcopy"
+	// "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type Task struct {
@@ -23,11 +23,11 @@ type Task struct {
 	Name          string
 	State         State
 	Image         string
-	Cpu           float64
+	Cpu           uint64
 	Memory        int64
 	Disk          int64
-	ExposedPorts  nat.PortSet
-	HostPorts     nat.PortMap
+	ExposedPorts  []nettypes.PortMapping
+	HostPorts     map[string][]define.InspectHostPort
 	PortBindings  map[string]string
 	RestartPolicy string
 	StartTime     time.Time
@@ -43,7 +43,7 @@ type TaskEvent struct {
 	Task      Task
 }
 
-// Config struct to hold Docker container config
+// Config struct to hold Podman container config
 type Config struct {
 	// Name of the task, also used as the container name
 	Name string
@@ -54,19 +54,19 @@ type Config struct {
 	// AttachStderr boolean which determines if stderr should be attached
 	AttachStderr bool
 	// ExposedPorts list of ports exposed
-	ExposedPorts nat.PortSet
+	ExposedPorts []nettypes.PortMapping
 	// Cmd to be run inside container (optional)
 	Cmd []string
 	// Image used to run the container
 	Image string
-	// Cpu
-	Cpu float64
+	// Cpu in shares (request)
+	Cpu uint64
 	// Memory in MiB
 	Memory int64
 	// Disk in GiB
 	Disk int64
 	// Env variables
-	Env []string
+	Env map[string]string
 	// RestartPolicy for the container ["", "always", "unless-stopped", "on-failure"]
 	RestartPolicy string
 }
@@ -83,115 +83,91 @@ func NewConfig(t *Task) *Config {
 	}
 }
 
-type Docker struct {
-	Client *client.Client
+
+type Podman struct {
+	Conn   context.Context
 	Config Config
 }
 
-type DockerInspectResponse struct {
+type PodmanInspectResponse struct {
 	Error     error
-	Container *types.ContainerJSON
+	Container *define.InspectContainerData
 }
 
-func (d *Docker) Inspect(containerID string) DockerInspectResponse {
-	dc, _ := client.NewClientWithOpts(client.FromEnv)
-	ctx := context.Background()
+func (p *Podman) Inspect(containerID string) PodmanInspectResponse {
 
-	resp, err := dc.ContainerInspect(ctx, containerID)
+	resp, err := containers.Inspect(p.Conn, p.Config.Name, nil)
 	if err != nil {
 		log.Printf("Error inspecting container: %s\n", err)
-		return DockerInspectResponse{Error: err}
+		return PodmanInspectResponse{Error: err}
 	}
 
-	return DockerInspectResponse{Container: &resp}
+	return PodmanInspectResponse{Container: resp}
 }
 
-func NewDocker(c *Config) *Docker {
-	dc, _ := client.NewClientWithOpts(client.FromEnv)
-	return &Docker{
-		Client: dc,
-		Config: *c,
+func NewPodman(c *Config) (*Podman, error) {
+	conn, err := bindings.NewConnection(context.Background(), "unix:///run/user/1000/podman/podman.sock")
+	if err != nil {
+		log.Printf("Error creating Podman connection: %s\n", err)
+		return nil, err
 	}
+
+	return &Podman{Conn: conn, Config: *c}, nil
 }
 
-type DockerResult struct {
+type ContainerResult struct {
 	Error       error
 	Action      string
 	ContainerId string
 	Result      string
 }
 
-func (d *Docker) Run() DockerResult {
-	ctx := context.Background()
-	reader, err := d.Client.ImagePull(ctx, d.Config.Image, types.ImagePullOptions{})
+func (p *Podman) Run() ContainerResult {
+	irp, err := images.Pull(p.Conn, p.Config.Image, nil)
 	if err != nil {
-		log.Printf("Error pulling image %s: %v\n", d.Config.Image, err)
-		return DockerResult{Error: err}
+		log.Printf("Error pulling image %s: %v\n", p.Config.Image, err)
+		return ContainerResult{Error: err}
 	}
-	io.Copy(os.Stdout, reader)
+	log.Printf("%s", strings.Join(irp, "\n"))
 
-	rp := container.RestartPolicy{
-		Name: d.Config.RestartPolicy,
-	}
+	// mib := p.Config.Memory * 1024 * 1024
 
-	r := container.Resources{
-		Memory:   d.Config.Memory,
-		NanoCPUs: int64(d.Config.Cpu * math.Pow(10, 9)),
-	}
+	s := specgen.NewSpecGenerator(p.Config.Image, false)
+	s.RestartPolicy = p.Config.RestartPolicy
+	// s.ResourceLimits = &specs.LinuxResources{Memory: &specs.LinuxMemory{Limit: &mib}, CPU: &specs.LinuxCPU{Shares: &p.Config.Cpu}}
+	s.Name = p.Config.Name
+	s.Env = p.Config.Env
+	s.PortMappings = p.Config.ExposedPorts
 
-	cc := container.Config{
-		Image:        d.Config.Image,
-		Tty:          false,
-		Env:          d.Config.Env,
-		ExposedPorts: d.Config.ExposedPorts,
-	}
-
-	hc := container.HostConfig{
-		RestartPolicy:   rp,
-		Resources:       r,
-		PublishAllPorts: true,
-	}
-
-	resp, err := d.Client.ContainerCreate(ctx, &cc, &hc, nil, nil, d.Config.Name)
+	createResponse, err := containers.CreateWithSpec(p.Conn, s, nil)
 	if err != nil {
-		log.Printf("Error creating container using image %s: %v\n", d.Config.Image, err)
-		return DockerResult{Error: err}
+		log.Printf("Error creating container %s: %v", p.Config.Name, err)
+		return ContainerResult{Error: err}
 	}
+	log.Printf("Container %s:%s created", p.Config.Name, createResponse.ID)
 
-	if err = d.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
-		log.Printf("Error starting container %s: %v\n", resp.ID, err)
-		return DockerResult{Error: err}
+	if err := containers.Start(p.Conn, createResponse.ID, nil); err != nil {
+		log.Printf("Error starting container %s:%s -> %v", p.Config.Name, createResponse.ID, err)
+		return ContainerResult{Error: err}
 	}
+	log.Printf("Container %s:%s started", p.Config.Name, createResponse.ID)
 
-	out, err := d.Client.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
-	if err != nil {
-		log.Printf("Error getting logs for container %s: %v\n", resp.ID, err)
-		return DockerResult{Error: err}
-	}
-
-	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
-
-	return DockerResult{ContainerId: resp.ID, Action: "start", Result: "success"}
+	return ContainerResult{ContainerId: createResponse.ID, Action: "start", Result: "success"}
 }
 
-func (d *Docker) Stop(id string) DockerResult {
+func (p *Podman) Stop(id string) ContainerResult {
 	log.Printf("Attempting to stop container %v", id)
-	ctx := context.Background()
-	err := d.Client.ContainerStop(ctx, id, container.StopOptions{})
+	err := containers.Stop(p.Conn, id, nil)
 	if err != nil {
 		log.Printf("Error stopping container %s: %v\n", id, err)
-		return DockerResult{Error: err}
+		return ContainerResult{Error: err}
 	}
 
-	err = d.Client.ContainerRemove(ctx, id, types.ContainerRemoveOptions{
-		RemoveVolumes: true,
-		RemoveLinks:   false,
-		Force:         false,
-	})
+	_, err = containers.Remove(p.Conn, id, nil)
 	if err != nil {
 		log.Printf("Error removing container %s: %v\n", id, err)
-		return DockerResult{Error: err}
+		return ContainerResult{Error: err}
 	}
 
-	return DockerResult{Action: "stop", Result: "success", Error: nil}
+	return ContainerResult{Action: "stop", Result: "success", Error: nil}
 }

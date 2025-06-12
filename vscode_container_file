@@ -19,19 +19,21 @@ RUN dnf install -y --refresh \
     wget \
     tree \
     vim \
-    unzip \
     jq \
     lsof \
     bind-utils \
-    redis \
-    postgresql \
     iproute \
     gawk
+
+RUN wget "https://raw.githubusercontent.com/containers/podman/refs/heads/main/rpm/podman.spec" \
+    && dnf builddep -y podman.spec \
+    && rm -f podman.spec
 
 ARG GOLANG_VERSION=1.24.4
 RUN wget "https://go.dev/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz" -O go.tar.gz \
     && tar -C /usr/local -xzf go.tar.gz \
     && echo 'export PATH=$PATH:/usr/local/go/bin' >> $HOME/.bashrc \
-    && echo 'export GOPATH=$HOME/go' >> $HOME/.bashrc
+    && echo 'export GOPATH=$HOME/go' >> $HOME/.bashrc \
+    && rm -f go.tar.gz
 
 RUN dnf clean all
