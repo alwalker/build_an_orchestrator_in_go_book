@@ -37,7 +37,7 @@ The stop command stops a running task.`,
 			log.Printf("Error sending request: %v", err)
 			return
 		}
-		
+
 		log.Printf("Task %v has been stopped.", args[0])
 	},
 }

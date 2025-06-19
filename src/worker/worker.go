@@ -60,47 +60,6 @@ func (w *Worker) CollectStats() {
 	}
 }
 
-func (w *Worker) runTask() task.ContainerResult {
-	t := w.Queue.Dequeue()
-	if t == nil {
-		log.Println("No tasks in the queue")
-		return task.ContainerResult{Error: nil}
-	}
-
-	taskQueued := t.(task.Task)
-	err := w.Db.Put(taskQueued.ID.String(), &taskQueued)
-	if err != nil {
-		msg := fmt.Errorf("error storing task %s: %v", taskQueued.ID.String(), err)
-		log.Println(msg)
-		return task.ContainerResult{Error: msg}
-	}
-	queuedTask, err := w.Db.Get(taskQueued.ID.String())
-	if err != nil {
-		msg := fmt.Errorf("error getting task %s from database: %v", taskQueued.ID.String(), err)
-		log.Println(msg)
-		return task.ContainerResult{Error: msg}
-	}
-	taskPersisted := *queuedTask.(*task.Task)
-
-	var result task.ContainerResult
-
-	if task.ValidStateTransition(taskPersisted.State, taskQueued.State) {
-		switch taskQueued.State {
-		case task.Scheduled:
-			result = w.StartTask(taskQueued)
-		case task.Completed:
-			result = w.StopTask(taskQueued)
-		default:
-			result.Error = errors.New("we should not get here")
-		}
-	} else {
-		err := fmt.Errorf("invalid transition from %v to %v", taskPersisted.State, taskQueued.State)
-		result.Error = err
-	}
-
-	return result
-}
-
 func (w *Worker) InspectTask(t task.Task) task.PodmanInspectResponse {
 	config := task.NewConfig(&t)
 
@@ -121,35 +80,6 @@ func (w *Worker) UpdateTasks() {
 
 		log.Println("Sleeping for 15 seconds")
 		time.Sleep(15 * time.Second)
-	}
-}
-
-func (w *Worker) updateTasks() {
-	tasks, err := w.Db.List()
-	if err != nil {
-		log.Printf("error getting list of tasks: %v\n", err)
-		return
-	}
-
-	for id, t := range tasks.([]*task.Task) {
-		if t.State == task.Running {
-			resp := w.InspectTask(*t)
-			if resp.Error != nil {
-				fmt.Printf("ERROR: %v\n", resp.Error)
-			}
-			if resp.Container == nil {
-				log.Printf("No container for running task %d\n", id)
-				t.State = task.Failed
-				w.Db.Put(t.ID.String(), t)
-			}
-			if resp.Container.State.Status == "exited" {
-				log.Printf("Container for task %d in non-running state %s", id, resp.Container.State.Status)
-				t.State = task.Failed
-				w.Db.Put(t.ID.String(), t)
-			}
-			t.HostPorts = resp.Container.NetworkSettings.Ports
-			w.Db.Put(t.ID.String(), t)
-		}
 	}
 }
 
@@ -184,13 +114,19 @@ func (w *Worker) StartTask(t task.Task) task.ContainerResult {
 	if result.Error != nil {
 		log.Printf("Err running task %v: %v\n", t.ID, result.Error)
 		t.State = task.Failed
-		w.Db.Put(t.ID.String(), &t)
+		err := w.Db.Put(t.ID.String(), &t)
+		if err != nil {
+			fmt.Printf("Error updating task: %v", err)
+		}
 		return result
 	}
 
 	t.ContainerID = result.ContainerId
 	t.State = task.Running
-	w.Db.Put(t.ID.String(), &t)
+	err = w.Db.Put(t.ID.String(), &t)
+	if err != nil {
+		fmt.Printf("Error updating task: %v", err)
+	}
 
 	return result
 }
@@ -211,10 +147,92 @@ func (w *Worker) StopTask(t task.Task) task.ContainerResult {
 
 	t.FinishTime = time.Now().UTC()
 	t.State = task.Completed
-	w.Db.Put(t.ID.String(), &t)
+	err = w.Db.Put(t.ID.String(), &t)
+	if err != nil {
+		fmt.Printf("Error updating task: %v", err)
+	}
 
 	log.Printf("Stopped and removed container %v for task %v\n",
 		t.ContainerID, t.ID)
 
 	return result
+}
+
+func (w *Worker) runTask() task.ContainerResult {
+	t := w.Queue.Dequeue()
+	if t == nil {
+		log.Println("No tasks in the queue")
+		return task.ContainerResult{Error: nil}
+	}
+
+	taskQueued := t.(task.Task)
+	err := w.Db.Put(taskQueued.ID.String(), &taskQueued)
+	if err != nil {
+		msg := fmt.Errorf("error storing task %s: %w", taskQueued.ID.String(), err)
+		log.Println(msg)
+		return task.ContainerResult{Error: msg}
+	}
+	queuedTask, err := w.Db.Get(taskQueued.ID.String())
+	if err != nil {
+		msg := fmt.Errorf("error getting task %s from database: %w", taskQueued.ID.String(), err)
+		log.Println(msg)
+		return task.ContainerResult{Error: msg}
+	}
+	taskPersisted := *queuedTask.(*task.Task)
+
+	var result task.ContainerResult
+
+	if task.ValidStateTransition(taskPersisted.State, taskQueued.State) {
+		switch taskQueued.State {
+		case task.Scheduled:
+			result = w.StartTask(taskQueued)
+		case task.Completed:
+			result = w.StopTask(taskQueued)
+		default:
+			result.Error = errors.New("we should not get here")
+		}
+	} else {
+		err := fmt.Errorf("invalid transition from %v to %v", taskPersisted.State, taskQueued.State)
+		result.Error = err
+	}
+
+	return result
+}
+
+func (w *Worker) updateTasks() {
+	tasks, err := w.Db.List()
+	if err != nil {
+		log.Printf("error getting list of tasks: %v\n", err)
+		return
+	}
+
+	for id, t := range tasks.([]*task.Task) {
+		if t.State == task.Running {
+			resp := w.InspectTask(*t)
+			if resp.Error != nil {
+				fmt.Printf("ERROR: %v\n", resp.Error)
+			}
+			if resp.Container == nil {
+				log.Printf("No container for running task %d\n", id)
+				t.State = task.Failed
+				err := w.Db.Put(t.ID.String(), t)
+				if err != nil {
+					fmt.Printf("Error updating task: %v", err)
+				}
+			}
+			if resp.Container.State.Status == "exited" {
+				log.Printf("Container for task %d in non-running state %s", id, resp.Container.State.Status)
+				t.State = task.Failed
+				err := w.Db.Put(t.ID.String(), t)
+				if err != nil {
+					fmt.Printf("Error updating task: %v", err)
+				}
+			}
+			t.HostPorts = resp.Container.NetworkSettings.Ports
+			err := w.Db.Put(t.ID.String(), t)
+			if err != nil {
+				fmt.Printf("Error updating task: %v", err)
+			}
+		}
+	}
 }

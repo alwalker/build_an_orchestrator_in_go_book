@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 )
@@ -49,8 +49,12 @@ func (n *Node) GetStats() (*stats.Stats, error) {
 		return nil, errors.New(msg)
 	}
 
-	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Printf("Error closing get stats connection: %v", err)
+		}
+	}()
+	body, _ := io.ReadAll(resp.Body)
 
 	var stats stats.Stats
 	err = json.Unmarshal(body, &stats)

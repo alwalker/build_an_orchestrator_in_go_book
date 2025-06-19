@@ -83,7 +83,6 @@ func NewConfig(t *Task) *Config {
 	}
 }
 
-
 type Podman struct {
 	Conn   context.Context
 	Config Config
@@ -92,6 +91,16 @@ type Podman struct {
 type PodmanInspectResponse struct {
 	Error     error
 	Container *define.InspectContainerData
+}
+
+func NewPodman(c *Config) (*Podman, error) {
+	conn, err := bindings.NewConnection(context.Background(), "unix:///run/user/1000/podman/podman.sock")
+	if err != nil {
+		log.Printf("Error creating Podman connection: %s\n", err)
+		return nil, err
+	}
+
+	return &Podman{Conn: conn, Config: *c}, nil
 }
 
 func (p *Podman) Inspect(containerID string) PodmanInspectResponse {
@@ -103,16 +112,6 @@ func (p *Podman) Inspect(containerID string) PodmanInspectResponse {
 	}
 
 	return PodmanInspectResponse{Container: resp}
-}
-
-func NewPodman(c *Config) (*Podman, error) {
-	conn, err := bindings.NewConnection(context.Background(), "unix:///run/user/1000/podman/podman.sock")
-	if err != nil {
-		log.Printf("Error creating Podman connection: %s\n", err)
-		return nil, err
-	}
-
-	return &Podman{Conn: conn, Config: *c}, nil
 }
 
 type ContainerResult struct {

@@ -121,16 +121,22 @@ func NewTaskStore(file string, mode os.FileMode, bucket string) (*TaskStore, err
 	return &t, nil
 }
 func (t *TaskStore) Close() {
-	t.Db.Close()
+	err := t.Db.Close()
+	if err != nil {
+		log.Printf("Error closing task database: %v", err)
+	}
 }
 func (t *TaskStore) Count() (int, error) {
 	taskCount := 0
 	err := t.Db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(t.Bucket))
-		b.ForEach(func(k, v []byte) error {
+		viewError := b.ForEach(func(k, v []byte) error {
 			taskCount++
 			return nil
 		})
+		if viewError != nil {
+			log.Printf("Error updating task count in boltdb: %v", viewError)
+		}
 		return nil
 	})
 	if err != nil {
@@ -143,7 +149,7 @@ func (t *TaskStore) CreateBucket() error {
 	return t.Db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucket([]byte(t.Bucket))
 		if err != nil {
-			return fmt.Errorf("create bucket %s: %s", t.Bucket, err)
+			return fmt.Errorf("create bucket %s: %w", t.Bucket, err)
 		}
 
 		return nil
@@ -196,7 +202,7 @@ func (t *TaskStore) List() (interface{}, error) {
 	err := t.Db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(t.Bucket))
 
-		b.ForEach(func(k, v []byte) error {
+		viewError := b.ForEach(func(k, v []byte) error {
 			var task task.Task
 			err := json.Unmarshal(v, &task)
 			if err != nil {
@@ -207,6 +213,9 @@ func (t *TaskStore) List() (interface{}, error) {
 
 			return nil
 		})
+		if viewError != nil {
+			log.Printf("Error listing tasks in boltdb: %v", viewError)
+		}
 
 		return nil
 	})
@@ -244,13 +253,16 @@ func NewEventStore(file string, mode os.FileMode, bucket string) (*EventStore, e
 	return &e, nil
 }
 func (e *EventStore) Close() {
-	e.Db.Close()
+	err := e.Db.Close()
+	if err != nil {
+		log.Printf("Error closing boltdb: %v", err)
+	}
 }
 func (e *EventStore) CreateBucket() error {
 	return e.Db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucket([]byte(e.Bucket))
 		if err != nil {
-			return fmt.Errorf("create bucket %s: %s", e.Bucket, err)
+			return fmt.Errorf("create bucket %s: %w", e.Bucket, err)
 		}
 		return nil
 	})
@@ -259,10 +271,13 @@ func (e *EventStore) Count() (int, error) {
 	eventCount := 0
 	err := e.Db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(e.Bucket))
-		b.ForEach(func(k, v []byte) error {
+		viewError := b.ForEach(func(k, v []byte) error {
 			eventCount++
 			return nil
 		})
+		if viewError != nil {
+			log.Printf("Error counting events in boltdb: %v", viewError)
+		}
 		return nil
 	})
 	if err != nil {
@@ -312,7 +327,7 @@ func (e *EventStore) List() (interface{}, error) {
 	var events []*task.TaskEvent
 	err := e.Db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(e.Bucket))
-		b.ForEach(func(k, v []byte) error {
+		viewError := b.ForEach(func(k, v []byte) error {
 			var event task.TaskEvent
 			err := json.Unmarshal(v, &event)
 			if err != nil {
@@ -321,6 +336,9 @@ func (e *EventStore) List() (interface{}, error) {
 			events = append(events, &event)
 			return nil
 		})
+		if viewError != nil {
+			log.Printf("Error listing events in boltdb: %v", viewError)
+		}
 		return nil
 	})
 	if err != nil {

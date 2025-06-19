@@ -1,0 +1,17 @@
+version: "2"
+
+linters:
+  enable:
+    - asciicheck
+    - bidichk
+    - cyclop
+    - dupl
+    - errorlint
+    - funcorder
+    - goconst
+    # - gosec
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+        text: "http.ListenAndServe(.+)"

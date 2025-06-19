@@ -16,6 +16,8 @@ import (
 )
 
 // nodeCmd represents the node command
+//
+//nolint:errcheck
 var nodeCmd = &cobra.Command{
 	Use:   "node",
 	Short: "Node command to list nodes.",
@@ -28,7 +30,7 @@ The node command allows a user to get the information about the nodes in the clu
 
 		resp, _ := http.Get(url)
 
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:govet
 
 		body, _ := io.ReadAll(resp.Body)
 		var nodes []*node.Node

@@ -14,6 +14,11 @@ type Api struct {
 	Router  *chi.Mux
 }
 
+func (a *Api) Start() {
+	a.initRouter()
+	http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
+}
+
 func (a *Api) initRouter() {
 	a.Router = chi.NewRouter()
 	a.Router.Route("/tasks", func(r chi.Router) {
@@ -26,9 +31,4 @@ func (a *Api) initRouter() {
 			r.Get("/", a.GetStatsHandler)
 		})
 	})
-}
-
-func (a *Api) Start() {
-	a.initRouter()
-	http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
 }

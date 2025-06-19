@@ -17,6 +17,8 @@ import (
 )
 
 // runCmd represents the run command
+//
+//nolint:errcheck
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run a new task.",
@@ -52,7 +54,7 @@ The run command starts a new task.`,
 		if resp.StatusCode != http.StatusCreated {
 			log.Printf("Error sending request: %v", resp.StatusCode)
 		}
-		
+
 		defer resp.Body.Close()
 		log.Println("Successfully sent task request to manager")
 	},

@@ -107,53 +107,6 @@ func (m *Manager) SelectWorker(t task.Task) (*node.Node, error) {
 	return selectedNode, nil
 }
 
-func (m *Manager) updateTasks() {
-	for _, worker := range m.Workers {
-		log.Printf("Checking worker %v for task updates", worker)
-		url := fmt.Sprintf("http://%s/tasks", worker)
-		resp, err := http.Get(url)
-		if err != nil {
-			log.Printf("Error connecting to %v: %v\n", worker, err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("Error sending request: %v\n", err)
-		}
-		d := json.NewDecoder(resp.Body)
-
-		var tasks []*task.Task
-		err = d.Decode(&tasks)
-		if err != nil {
-			log.Printf("Error unmarshalling tasks: %s\n", err.Error())
-		}
-
-		for _, t := range tasks {
-			log.Printf("Attempting to update task %v\n", t.ID)
-
-			result, err := m.TaskDb.Get(t.ID.String())
-			if err != nil {
-				log.Printf("[manager] %s\n", err)
-				continue
-			}
-			taskPersisted, ok := result.(*task.Task)
-			if !ok {
-				log.Printf("cannot convert result %v to task.Task type\n",
-					result)
-				continue
-			}
-
-			if taskPersisted.State != t.State {
-				taskPersisted.State = t.State
-			}
-			taskPersisted.StartTime = t.StartTime
-			taskPersisted.FinishTime = t.FinishTime
-			taskPersisted.ContainerID = t.ContainerID
-			taskPersisted.HostPorts = t.HostPorts
-
-			m.TaskDb.Put(taskPersisted.ID.String(), taskPersisted)
-		}
-	}
-}
-
 func (m *Manager) UpdateTasks() {
 	for {
 		log.Println("Checking for task updates from workers")
@@ -214,7 +167,10 @@ func (m *Manager) SendWork() {
 		}
 
 		t.State = task.Scheduled
-		m.TaskDb.Put(t.ID.String(), &t)
+		err = m.TaskDb.Put(t.ID.String(), &t)
+		if err != nil {
+			log.Printf("Error updating task %s in database: %v", t.ID.String(), err)
+		}
 		data, err := json.Marshal(te)
 		if err != nil {
 			log.Printf("Unable to marshal task object: %v.\n", t)
@@ -262,6 +218,56 @@ func (m *Manager) DoHealthChecks() {
 		log.Println("Task health checks completed")
 		log.Println("Sleeping for 60 seconds")
 		time.Sleep(60 * time.Second)
+	}
+}
+
+func (m *Manager) updateTasks() {
+	for _, worker := range m.Workers {
+		log.Printf("Checking worker %v for task updates", worker)
+		url := fmt.Sprintf("http://%s/tasks", worker)
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("Error connecting to %v: %v\n", worker, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Error sending request: %v\n", err)
+		}
+		d := json.NewDecoder(resp.Body)
+
+		var tasks []*task.Task
+		err = d.Decode(&tasks)
+		if err != nil {
+			log.Printf("Error unmarshalling tasks: %s\n", err.Error())
+		}
+
+		for _, t := range tasks {
+			log.Printf("Attempting to update task %v\n", t.ID)
+
+			result, err := m.TaskDb.Get(t.ID.String())
+			if err != nil {
+				log.Printf("[manager] %s\n", err)
+				continue
+			}
+			taskPersisted, ok := result.(*task.Task)
+			if !ok {
+				log.Printf("cannot convert result %v to task.Task type\n",
+					result)
+				continue
+			}
+
+			if taskPersisted.State != t.State {
+				taskPersisted.State = t.State
+			}
+			taskPersisted.StartTime = t.StartTime
+			taskPersisted.FinishTime = t.FinishTime
+			taskPersisted.ContainerID = t.ContainerID
+			taskPersisted.HostPorts = t.HostPorts
+
+			err = m.TaskDb.Put(taskPersisted.ID.String(), taskPersisted)
+			if err != nil {
+				log.Printf("Error updating task %s in database: %v", taskPersisted.ID.String(), err)
+			}
+		}
 	}
 }
 
@@ -332,7 +338,10 @@ func (m *Manager) restartTask(t *task.Task) {
 	w := m.TaskWorkerMap[t.ID]
 	t.State = task.Scheduled
 	t.RestartCount++
-	m.TaskDb.Put(t.ID.String(), t)
+	err := m.TaskDb.Put(t.ID.String(), t)
+	if err != nil {
+		log.Printf("Error updating task %s in database: %v", t.ID.String(), err)
+	}
 	te := task.TaskEvent{
 		ID:        uuid.New(),
 		State:     task.Running,

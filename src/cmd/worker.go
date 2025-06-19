@@ -32,7 +32,7 @@ The worker runs tasks and responds to the manager's requests about task state.`,
 		go w.RunTasks()
 		go w.CollectStats()
 		go w.UpdateTasks()
-		
+
 		log.Printf("Starting worker API on http://%s:%d", host, port)
 		api.Start()
 	},

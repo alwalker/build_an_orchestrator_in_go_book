@@ -18,6 +18,8 @@ import (
 )
 
 // statusCmd represents the status command
+//
+//nolint:errcheck
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Status command to list tasks.",
